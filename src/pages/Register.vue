@@ -147,11 +147,12 @@ const register = async () => {
       router.push('/')
     }, 3000)
  
-  } catch (error) {
+} catch (error) {
+    console.error('Register error:', error.response?.data || error)
     const status = error.response?.status
     const serverErrors = error.response?.data?.errors
     const serverMessage = error.response?.data?.message
- 
+
     if (status === 409 || (serverErrors?.email && serverErrors.email[0].toLowerCase().includes('taken'))) {
       showAlert('warning', 'An account with this email already exists. Try signing in instead.')
     } else if (status === 422 && serverErrors) {

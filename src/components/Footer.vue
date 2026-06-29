@@ -187,6 +187,7 @@ function subscribeNewsletter() {
 /* ── Social ── */
 .social-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
  

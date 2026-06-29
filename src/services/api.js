@@ -4,7 +4,6 @@ import router from '@/router'
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
   headers: {
-    'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
 })
@@ -14,6 +13,8 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // Debug: log request
+  console.log('API Request:', config.method?.toUpperCase(), config.url, config.data)
   return config
 })
 
@@ -34,16 +35,29 @@ export const authApi = {
   login: (data) => api.post('/login', data),
   logout: () => api.post('/logout'),
   getProfile: () => api.get('/me'),
-  updateProfile: (data) => {
-    const formData = new FormData()
-    Object.keys(data).forEach(key => {
-      if (data[key] !== undefined && data[key] !== null) {
-        formData.append(key, data[key])
-      }
-    })
-    return api.put('/me', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+updateProfile: (data) => {
+    // Check if there's a file to upload
+    const hasFile = data.avatar && data.avatar instanceof File
+    
+    if (hasFile) {
+      const formData = new FormData()
+      Object.keys(data).forEach(key => {
+        let value = data[key]
+        if (value instanceof File) {
+          formData.append(key, value)
+        } else if (value !== undefined && value !== null && value !== '') {
+          formData.append(key, value)
+        }
+      })
+      // Use POST with _method=PUT for Laravel method spoofing (handles multipart properly)
+      formData.append('_method', 'PUT')
+      return api.post('/me', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+    }
+    
+    // Send as JSON when no file
+    return api.put('/me', data)
   },
   updatePassword: (data) => api.put('/me/password', data),
 }

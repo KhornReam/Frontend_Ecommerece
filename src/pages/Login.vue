@@ -71,36 +71,40 @@ function startRedirectProgress() {
 const login = async () => {
   touched.value = { email: true, password: true }
   hideAlert()
- 
+  
   if (isLocked.value) {
     showAlert('error', 'Account temporarily locked due to too many attempts. Reset your password or try again later.')
     return
   }
- 
+  
   if (!form.value.email) {
     showAlert('error', 'Email address is required.')
     return
   }
- 
+  
   if (!emailValid.value) {
     showAlert('error', 'Please enter a valid email address.')
     return
   }
- 
+  
   if (!form.value.password) {
     showAlert('error', 'Password is required.')
     return
   }
- 
+  
   if (!passwordValid.value) {
     showAlert('error', 'Password must be at least 6 characters long.')
     return
   }
- 
+  
   loading.value = true
- 
+  
+  // Debug: log what we're sending
+  console.log('Login form data:', { email: form.value.email, password: form.value.password })
+  
   try {
     const response = await authApi.login(form.value)
+    console.log('Login response:', response.data)
  
     authStore.setAuth(response.data.token, response.data.user)
  
@@ -113,13 +117,14 @@ const login = async () => {
       router.push(redirect)
     }, 3000)
  
-  } catch (error) {
+} catch (error) {
+    console.error('Login error:', error.response?.data || error)
     loginAttempts.value++
- 
+
     const status = error.response?.status
     const serverErrors = error.response?.data?.errors
     const serverMessage = error.response?.data?.message
- 
+
     if (status === 401) {
       if (remainingAttempts.value <= 2) {
         showAlert('warning', `Incorrect credentials. ${remainingAttempts.value} attempt(s) remaining before your account is locked.`)

@@ -55,9 +55,27 @@ const fetchProfile = async () => {
 const handleAvatarChange = (event) => {
   const file = event.target.files[0]
   if (file) {
+    console.log('Selected file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      lastModified: file.lastModified
+    })
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp']
+    if (!validTypes.includes(file.type)) {
+      errors.value.avatar = ['File must be an image (JPEG, PNG, JPG, GIF, WebP)']
+      return
+    }
+    // Validate file size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      errors.value.avatar = ['File size must be less than 2MB']
+      return
+    }
     avatarFile.value = file
     profileForm.avatar = file
     avatarPreview.value = URL.createObjectURL(file)
+    errors.value.avatar = null
   }
 }
 
@@ -65,6 +83,7 @@ const removeAvatar = () => {
   avatarFile.value = null
   profileForm.avatar = null
   avatarPreview.value = null
+  errors.value.avatar = null
 }
 
 const updateProfile = async () => {
@@ -73,13 +92,31 @@ const updateProfile = async () => {
   saving.value = true
 
   try {
-    const response = await authApi.updateProfile(profileForm)
+    // Create plain object from reactive form
+    const formData = {
+      name: profileForm.name,
+      email: profileForm.email,
+      phone: profileForm.phone,
+    }
+    if (avatarFile.value) {
+      formData.avatar = avatarFile.value
+      console.log('avatarFile.value:', avatarFile.value)
+      console.log('avatarFile.value instanceof File:', avatarFile.value instanceof File)
+      console.log('avatarFile.value.constructor:', avatarFile.value.constructor)
+      console.log('avatarFile.value.constructor.name:', avatarFile.value.constructor.name)
+    }
+    console.log('Submitting formData:', formData)
+    const response = await authApi.updateProfile(formData)
+    console.log('Response:', response.data)
     authStore.setAuth(authStore.token, response.data.data)
     success.value = 'Profile updated successfully!'
     avatarFile.value = null
   } catch (error) {
+    console.error('Update profile error:', error.response?.data)
     if (error.response?.data?.errors) {
       errors.value = error.response.data.errors
+    } else if (error.response?.data?.message) {
+      errors.value.general = [error.response.data.message]
     }
   } finally {
     saving.value = false
@@ -195,7 +232,29 @@ onMounted(() => {
  
             <form @submit.prevent="updateProfile" novalidate>
               <div v-if="errors.general" class="inline-error">{{ errors.general[0] }}</div>
- 
+
+              <!-- Avatar Upload -->
+              <div class="avatar-section">
+                <div class="avatar-preview-wrapper">
+                  <div class="avatar-preview" :style="{ backgroundImage: `url(${avatarUrl})` }" />
+                  <label class="avatar-upload-btn" for="avatar-input">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/>
+                      <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <span>Change photo</span>
+                  </label>
+                  <input id="avatar-input" type="file" accept="image/*" @change="handleAvatarChange" hidden />
+                  <button v-if="avatarFile" type="button" class="avatar-remove-btn" @click="removeAvatar" aria-label="Remove avatar">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                      <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+                    </svg>
+                  </button>
+                </div>
+                <p v-if="avatarFile" class="avatar-hint">New photo selected — click Save changes to upload</p>
+                <p v-else class="avatar-hint">Click to change your profile photo</p>
+              </div>
+
               <div class="fields">
                 <div class="field">
                   <label class="field-label" for="f-name">Full name</label>
@@ -249,6 +308,11 @@ onMounted(() => {
                   </div>
                   <span v-if="errors.phone" class="field-error">{{ errors.phone[0] }}</span>
                 </div>
+              </div>
+
+              <!-- Debug: show validation errors -->
+              <div v-if="Object.keys(errors).length > 0" class="debug-errors">
+                <pre>{{ JSON.stringify(errors, null, 2) }}</pre>
               </div>
  
               <div class="card-actions">
