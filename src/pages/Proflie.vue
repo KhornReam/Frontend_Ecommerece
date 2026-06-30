@@ -19,7 +19,10 @@ const avatarFile = ref(null)
 
 const avatarUrl = computed(() => {
   if (avatarPreview.value) return avatarPreview.value
-  if (authStore.user?.avatar_url) return authStore.user.avatar_url
+  if (authStore.user?.avatar) {
+    const baseUrl = import.meta.env.VITE_API_URL.replace('/api/v1', '')
+    return `${baseUrl}/storage/avatars/${authStore.user.avatar}`
+  }
   return defaultAvatar
 })
 
@@ -44,7 +47,7 @@ const fetchProfile = async () => {
     profileForm.name = user.name
     profileForm.email = user.email
     profileForm.phone = user.phone || ''
-    avatarPreview.value = user.avatar_url || null
+    avatarPreview.value = user.avatar || null
   } catch (error) {
     console.error(error)
   } finally {

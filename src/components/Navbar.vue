@@ -2,57 +2,123 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore, useCartStore, useWishlistStore } from '@/store'
- 
+import { productApi } from '@/services/api'
+
 const router = useRouter()
 const authStore = useAuthStore()
 const cartStore = useCartStore()
 const wishlistStore = useWishlistStore()
- 
+
 const isLoggedIn   = computed(() => authStore.isAuthenticated)
 const cartCount    = computed(() => cartStore.totalItems)
 const wishlistCount = computed(() => wishlistStore.totalItems)
 const userName     = computed(() => authStore.user?.name || '')
 const userInitial  = computed(() => userName.value.charAt(0).toUpperCase() || 'U')
- 
+
 const showDropdown = ref(false)
 const mobileOpen   = ref(false)
 const scrolled     = ref(false)
 const dropdownRef  = ref(null)
- 
+const searchQuery  = ref('')
+const showSearch   = ref(false)
+const searchResults = ref([])
+const searchLoading = ref(false)
+const searchFocused = ref(false)
+
 // Scroll shadow
 function onScroll() {
   scrolled.value = window.scrollY > 8
 }
- 
+
 // Close dropdown on outside click
 function onClickOutside(e) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
     showDropdown.value = false
   }
+  if (searchFocused.value && !e.target.closest('.search-wrapper')) {
+    showSearch.value = false
+    searchResults.value = []
+  }
 }
- 
+
 onMounted(() => {
   window.addEventListener('scroll', onScroll)
   document.addEventListener('mousedown', onClickOutside)
 })
- 
+
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
   document.removeEventListener('mousedown', onClickOutside)
 })
- 
+
 function toggleDropdown() {
   showDropdown.value = !showDropdown.value
 }
- 
+
 function closeMobile() {
   mobileOpen.value = false
 }
- 
+
 function logout() {
   showDropdown.value = false
   authStore.logout()
   router.push('/')
+}
+
+// Search functionality
+const searchDebounce = ref(null)
+
+async function onSearchInput() {
+  clearTimeout(searchDebounce.value)
+  
+  if (searchQuery.value.trim().length < 2) {
+    searchResults.value = []
+    showSearch.value = false
+    return
+  }
+
+  searchLoading.value = true
+  showSearch.value = true
+
+  searchDebounce.value = setTimeout(async () => {
+    try {
+      const response = await productApi.search(searchQuery.value.trim())
+      searchResults.value = response.data.data?.data || response.data.data || []
+    } catch (error) {
+      console.error('Search error:', error)
+      searchResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }, 250)
+}
+
+function onSearchFocus() {
+  searchFocused.value = true
+  if (searchQuery.value.trim().length >= 2) {
+    showSearch.value = true
+  }
+}
+
+function onSearchBlur() {
+  searchFocused.value = false
+  setTimeout(() => {
+    showSearch.value = false
+  }, 200)
+}
+
+function selectResult(product) {
+  searchQuery.value = ''
+  searchResults.value = []
+  showSearch.value = false
+  searchFocused.value = false
+  router.push(`/products/${product.id}`)
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  showSearch.value = false
 }
 </script>
  
@@ -60,7 +126,7 @@ function logout() {
   <header :class="['navbar', scrolled && 'navbar--scrolled']">
     <div class="nav-container">
  
-      <!-- Logo -->
+<!-- Logo -->
       <router-link to="/" class="logo" @click="closeMobile">
         <div class="logo-mark">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -70,7 +136,74 @@ function logout() {
         </div>
         <span class="logo-text">ShopVue</span>
       </router-link>
- 
+
+      <!-- Search Bar (Desktop) -->
+      <div class="search-wrapper" @click="onSearchFocus">
+        <div class="search-input-wrapper">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="search"
+            class="search-input"
+            placeholder="Search products..."
+            v-model="searchQuery"
+            @input="onSearchInput"
+            @focus="onSearchFocus"
+            @blur="onSearchBlur"
+            @keydown.enter.prevent
+            autocomplete="off"
+            aria-label="Search products"
+            aria-expanded="showSearch && searchResults.length > 0"
+            aria-controls="search-results"
+          />
+          <button
+            v-if="searchQuery"
+            class="search-clear"
+            @click.stop="clearSearch"
+            aria-label="Clear search"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <span v-if="searchLoading" class="search-loader"></span>
+        </div>
+
+        <!-- Search Results Dropdown -->
+        <transition name="search-dropdown">
+          <div v-if="showSearch && (searchResults.length > 0 || searchLoading)" class="search-dropdown" id="search-results" role="listbox">
+            <div v-if="searchLoading" class="search-loading">
+              <span class="search-spinner"></span>
+              <span>Searching...</span>
+            </div>
+            <div v-else class="search-results">
+              <router-link
+                v-for="product in searchResults"
+                :key="product.id"
+                :to="`/products/${product.id}`"
+                class="search-result-item"
+                role="option"
+                @click="showSearch = false"
+              >
+                <img :src="product.image_url || product.image" :alt="product.name" class="search-result-image" loading="lazy" />
+                <div class="search-result-info">
+                  <span class="search-result-name">{{ product.name }}</span>
+                  <span class="search-result-price">{{ product.price }}</span>
+                </div>
+              </router-link>
+            </div>
+            <div class="search-footer">
+              <router-link :to="`/products?q=${encodeURIComponent(searchQuery)}`" class="search-view-all">
+                View all results for "{{ searchQuery }}"
+              </router-link>
+            </div>
+          </div>
+        </transition>
+      </div>
+
       <!-- Desktop nav links -->
       <nav class="nav-links" aria-label="Main navigation">
         <router-link to="/">Home</router-link>
@@ -527,7 +660,218 @@ function logout() {
 .btn-solid:hover { background: #1f2937; }
  
 .w-full { width: 100%; }
- 
+
+/* ── Search Bar ── */
+.search-wrapper {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+  min-width: 280px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.search-input-wrapper:hover {
+  border-color: #d1d5db;
+}
+
+.search-input-wrapper:focus-within {
+  border-color: #7C6FFF;
+  box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.15);
+  background: #ffffff;
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  color: #9ca3af;
+  pointer-events: none;
+  transition: color 0.2s;
+}
+
+.search-input-wrapper:focus-within .search-icon {
+  color: #7C6FFF;
+}
+
+.search-input {
+  flex: 1;
+  width: 100%;
+  height: 44px;
+  padding: 0 44px 0 46px;
+  border: none;
+  background: transparent;
+  color: #111827;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: #9ca3af;
+}
+
+.search-clear {
+  position: absolute;
+  right: 44px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.search-clear:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.search-loader {
+  position: absolute;
+  right: 12px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #7C6FFF;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Search Dropdown */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  padding: 8px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.search-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #7C6FFF;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.search-result-item:hover {
+  background: #f3f4f6;
+}
+
+.search-result-image {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+
+.search-result-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.search-result-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-price {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #7C6FFF;
+}
+
+.search-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #f3f4f6;
+  margin-top: 4px;
+}
+
+.search-view-all {
+  display: block;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: #7C6FFF;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.search-view-all:hover {
+  opacity: 0.8;
+}
+
+/* Search dropdown transitions */
+.search-dropdown-enter-active,
+.search-dropdown-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.search-dropdown-enter-from,
+.search-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+
 /* ── Hamburger ── */
 .hamburger {
   display: none;
@@ -723,14 +1067,46 @@ function logout() {
   .dropdown-item--danger:hover { background: #450a0a; }
   .dropdown-count { background: #0f172a; color: #94a3b8; }
  
-  .btn-ghost { color: #cbd5e1; border-color: #334155; background: #1e293b; }
+.btn-ghost { color: #cbd5e1; border-color: #334155; background: #1e293b; }
   .btn-ghost:hover { background: #0f172a; border-color: #475569; }
   .btn-solid { background: #f1f5f9; color: #0f172a; }
   .btn-solid:hover { background: #e2e8f0; }
- 
+
   .hamburger { background: #1e293b; border-color: #334155; }
   .bar { background: #94a3b8; }
- 
+
+  /* Search dark mode */
+  .search-input-wrapper {
+    background: #0f172a;
+    border-color: #334155;
+  }
+  .search-input-wrapper:hover {
+    border-color: #475569;
+  }
+  .search-input-wrapper:focus-within {
+    border-color: #7C6FFF;
+    box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.2);
+    background: #1e293b;
+  }
+  .search-icon { color: #64748b; }
+  .search-input-wrapper:focus-within .search-icon { color: #7C6FFF; }
+  .search-input { color: #f1f5f9; }
+  .search-input::placeholder { color: #64748b; }
+  .search-clear { color: #64748b; }
+  .search-clear:hover { background: #1e293b; color: #f1f5f9; }
+  .search-loader { border-color: #334155; border-top-color: #7C6FFF; }
+
+  .search-dropdown { background: #1e293b; border-color: #334155; box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .search-loading { color: #94a3b8; }
+  .search-spinner { border-color: #334155; border-top-color: #7C6FFF; }
+  .search-result-item:hover { background: #0f172a; }
+  .search-result-image { background: #334155; }
+  .search-result-name { color: #f1f5f9; }
+  .search-result-price { color: #C4B9FF; }
+  .search-footer { background: #0f172a; border-top-color: #334155; }
+  .search-view-all { color: #C4B9FF; }
+  .search-view-all:hover { color: #e0d8ff; }
+
   .mobile-menu { background: #1e293b; border-top-color: #334155; }
   .mobile-nav a { color: #cbd5e1; }
   .mobile-nav a:hover,
